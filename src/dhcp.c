@@ -12,13 +12,10 @@
 #include <util/map.h>
 #include <util/event.h>
 
-//dhcp_process 
 #define MAX 		0xfffffffe 
 #define DHCP_SESSION	"net.dhcp.sessiontable"
 
 
-
-//make session table for nic
 bool dhcp_init(NIC* nic) {
 	if(!nic) 
 		return false;
@@ -95,6 +92,12 @@ bool dhcp_process(Packet* _packet) {
 			break;
 		case DHCP_TYPE_ACK:
 			your_ip = dhcp_session->your_ip;
+			printf("SSSSSSSSSSSSSSSSSSSSSS  %p \n\n", your_ip);
+
+			//if(dhcp_session->request_timer_id && event_timer_remove(dhcp_session->request_timer_id))
+		//		dhcp_session->request_timer_id = 0;
+
+			printf("AAAAAAAAAAAAAAAAAAAA \n\n");
 			dhcp_session->ack_received(packet->nic, t_id, your_ip, NULL); 
 			break;
 		default:
@@ -340,27 +343,34 @@ bool dhcp_request(NIC* nic, uint32_t key) {
 } 
 
 bool dhcp_bound(NIC* nic, uint32_t key) {
-//	bool dhcp_resend_callback(void* context) {
-//		DHCPSession* session = context;
-//		static int discover_count = 0;
-//		printf("test context: %p", context);
-//		bool callback = session->discovered(session->nic, session->transaction_id, 0, NULL);
-//
-//		if(callback && (discover_count<=5)) {
-//			printf("dhcp_timer!!! %d \n", discover_count);
-//			dhcp_discover(session->nic, session->transaction_id);
-//			discover_count++;
-//			printf("dhcp_timeout count %d \n", discover_count);
-//			return true;
-//		} else {
-//			printf("dhcp_timout \n");
-//			discover_count=0;
-//			return false;
-//		}
-//		return true;
-//	}
-// 	event_timer_add(dhcp_resend_callback, , 0, 30);
+	bool dhcp_resend_callback(void* context) {
+		DHCPSession* session = context;
+		static int discover_count = 0;
+
+		if(discover_count<=5) {
+			printf("dhcp_request again!!! %d \n", discover_count);
+			dhcp_request(session->nic, session->transaction_id);
+			discover_count++;
+			return true;
+		} else {
+			printf("dhcp_request over \n");
+			discover_count=0;
+			return false;
+		}
+		return true;
+	}
+
+	Map* session_map = nic_config_get(nic, DHCP_SESSION);
+	if(!session_map)
+		return false;
+
+	DHCPSession* dhcp_session = map_get(session_map, (void*)(uintptr_t)key);
+	if(!dhcp_session)
+		return false;
+
+ 	uint64_t timer_id = event_timer_add(dhcp_resend_callback, dhcp_session, 5000000, 5000000);
+	dhcp_session->request_timer_id = timer_id;
+	
 	return true;
 }
-
 

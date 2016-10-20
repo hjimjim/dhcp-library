@@ -24,7 +24,7 @@
 #define DHCP_TYPE_DISCOVER	1
 #define DHCP_TYPE_OFFER		2
 #define DHCP_TYPE_REQUEST	3
-#define DHCP_TYPE_ACK		4
+#define DHCP_TYPE_ACK		5
 
 #define DHCP_MAGICCOOKIE	0x63825363  //99.130.83.99
 
@@ -76,6 +76,7 @@ typedef struct _DHCPSession {
 	uint32_t your_ip;	// Your IP
 	uint32_t gateway_ip;	// GW IP
 	uint32_t discover_timer_id;	
+	uint32_t request_timer_id;	
 	CallFunc discovered;
 	CallFunc offered;
 	CallFunc ack_received;
