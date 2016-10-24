@@ -1,8 +1,8 @@
-#include <net/nic.h>
 #ifndef __NET_DHCP_H__
-
 #define __NET_DHCP_H__
 
+#include <net/nic.h>
+#include <errno.h>
 							// code length
 #define DHCP_OPTION_MESSAGE_TYPE  		0x35	// 53	1
 #define DHCP_OPTION_CLIENT_IDENTIFIER		0x3d	// 61	7
@@ -21,12 +21,29 @@
 #define DHCP_CLIENT_PORT	68
 #define DHCP_SERVER_PORT	67
 
+#define DHCP_TYPE_INIT		0
 #define DHCP_TYPE_DISCOVER	1
 #define DHCP_TYPE_OFFER		2
 #define DHCP_TYPE_REQUEST	3
+#define DHCP_TYPE_DECLINE	4
 #define DHCP_TYPE_ACK		5
+#define DHCP_TYPE_NAK		6
+#define DHCP_TYPE_RELEASE	7
+#define DHCP_TYPE_INFORM	8
 
-#define DHCP_MAGICCOOKIE	0x63825363  //99.130.83.99
+#define DHCP_MAGICCOOKIE	0x63825363  // 99.130.83.99
+
+
+#define DHCP_ERROR_INIT_FAIL		1
+#define DHCP_ERROR_DISCOVER_FAIL	2
+#define DHCP_ERROR_REQUEST_FAIL		3
+#define DHCP_ERROR_NO_NIC		4
+#define DHCP_ERROR_NO_MAP		5
+#define DHCP_ERROR_NO_PACKET		6
+#define DHCP_ERROR_NO_SESSION 		7
+#define DHCP_ERROR_NIC_CONFIG_FAIL	8	
+#define DHCP_ERROR_MAP_REMOVE_FAIL	9
+#define DHCP_ERROR_TID			10
 
 /**
  * DHCP payload
@@ -62,13 +79,8 @@ typedef struct _DHCPOption {
 	uint8_t data[0];
 } __attribute__ ((packed)) DHCPOption; 
 
-//typedef struct _DHCPCallback {
-////	bool (*discovered)(NIC* nic, uint32_t transaction_id);
-//	bool (*offered)(NIC* nic, uint32_t transaction_id);
-//	bool (*ack_received)();
-//} DHCPCallback;
-
-typedef bool(*CallFunc)(NIC* nic, uint32_t transaction_id, uint32_t ip, void* context);
+// DHCPCallback
+typedef bool(*DHCPCallback)(NIC* nic, uint32_t transaction_id, uint32_t ip, void* context);
 
 typedef struct _DHCPSession {
 	NIC* nic;
@@ -77,9 +89,9 @@ typedef struct _DHCPSession {
 	uint32_t gateway_ip;	// GW IP
 	uint32_t discover_timer_id;	
 	uint32_t request_timer_id;	
-	CallFunc discovered;
-	CallFunc offered;
-	CallFunc ack_received;
+	DHCPCallback discovered;
+	DHCPCallback offered;
+	DHCPCallback acked;
 	void* context;
 } DHCPSession;
 
@@ -89,7 +101,7 @@ typedef struct _DHCPSession {
  * @param nic NIC
  * @return true if session table is configured safely  
  */
-bool dhcp_init(NIC* ni);
+bool dhcp_init(NIC* nic);
 
 /**
  * Process dhcp packet
@@ -98,37 +110,14 @@ bool dhcp_init(NIC* ni);
 bool dhcp_process(Packet* packet);
 
 /**
- * Send DHCP discover packet
- * @param nic NIC
- * @param dhcp_callback DHCPCallback
- * @return true if dhcp discover is sent
- */
-bool dhcp_discover(NIC* ni, uint32_t transaction_id);
-
-/**
- * Send DHCP request packet 
- * @param nic NIC
- * @return true if dhcp request is sent
- */
-bool dhcp_request(NIC* ni, uint32_t transactionId);
-
-/**
  * Create DHCP Session
  * @param nic NIC
  * @param discovered CallFunc
  * @param offered CallFunc
  * @param ack_received CallFunc
- * @return transactionId 
+ * @return transaction_id 
  */
-uint32_t dhcp_create_session(NIC* ni, CallFunc discovered, CallFunc offered,
-						 CallFunc ack_received, void* context);
+uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* context);
 
-bool distory_dhcp_session(NIC* ni, uint32_t transactionId);
-
-/**
- *  
- * 
- */
-bool dhcp_bound();
 
 #endif /* __NET_DHCP_H__ */
