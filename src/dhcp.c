@@ -11,6 +11,8 @@
 #include <string.h>
 #include <util/map.h>
 #include <util/event.h>
+#include <util/list.h>
+#include <string.h>
 
 #define MAX 		0xfffffffe 
 #define DHCP_SESSION	"net.dhcp.sessiontable"
@@ -42,6 +44,8 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 		return false;
 	}
 
+	memset(packet->buffer + packet->start, 0, sizeof(Ether) + sizeof(IP) + sizeof(UDP) + sizeof(DHCP) + 26);
+
 	Ether* ether = (Ether*)(packet->buffer + packet->start);
 	ether->dmac = endian48(0xffffffffffff);
 	ether->smac = endian48(nic->mac);
@@ -68,26 +72,26 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 	udp->destination = endian16(0x0043);
 
 	DHCP* dhcp = (DHCP*)udp->body;
-	dhcp-> op_code = endian8(0x0001);
-	dhcp-> hw_type = endian8(0x0001);
-	dhcp-> hw_length = endian8(6);
+	dhcp-> op = endian8(0x0001);
+	dhcp-> htype = endian8(0x0001);
+	dhcp-> hlen = endian8(6);
 	//TODO: calculate hops
 	dhcp-> hops = endian8(0x0000);
 
 	//transactionId
 	//second
-	dhcp-> transaction_id= endian32(dhcp_session->transaction_id);
+	dhcp-> xid = endian32(dhcp_session->transaction_id);
 	dhcp-> flags = endian8(0x0000);
 
-	dhcp-> client_ip= endian32(0x00000000);
-	dhcp-> your_ip= endian32(0x00000000);
-	dhcp-> server_ip= endian32(0x00000000);
-	dhcp-> gateway_ip = endian32(dhcp_session->gateway_ip);
+	dhcp-> ciaddr = endian32(0x00000000);
+	dhcp-> yiaddr = endian32(0x00000000);
+	dhcp-> siaddr = endian32(0x00000000);
+	dhcp-> giaddr = endian32(dhcp_session->gateway_ip);
 
-	dhcp-> client_hw_addr = endian64((nic->mac)<<16);
-	dhcp-> client_hw_addr_padding = endian64(0);
+	*dhcp->chaddr = endian48(nic->mac);
+
 	dhcp-> magic_cookie = endian32(DHCP_MAGICCOOKIE); 
-
+//
 	//dhcp option for message_type
 	DHCPOption* message_type =  (DHCPOption*)dhcp->options;
 	message_type->code = endian8(DHCP_OPTION_MESSAGE_TYPE);
@@ -123,16 +127,13 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 		return false;
 	}
 
-	printf("here is request \n");
 	return true;
 } 
 
 bool dhcp_bound(NIC* nic, uint32_t key) {
 	bool dhcp_resend_callback(void* context) {
 		DHCPSession* session = context;
-		printf("dhcp_bound again!!!\n");
 		dhcp_request(session);
-		printf("dhcp_request over \n");
 		return false;
 	}
 
@@ -148,7 +149,7 @@ bool dhcp_bound(NIC* nic, uint32_t key) {
 		return false;
 	}
 
- 	uint64_t timer_id = event_timer_add(dhcp_resend_callback, dhcp_session, 5000000, 5000000);
+ 	uint64_t timer_id = event_timer_add(dhcp_resend_callback, dhcp_session, 50000000, 50000000);
 	dhcp_session->request_timer_id = timer_id;
 	
 	return true;
@@ -219,11 +220,11 @@ bool dhcp_process(Packet* _packet) {
 		return false;
 
 	UDP* udp = (UDP*)ip->body;
-	if(udp->source != endian16(DHCP_SERVER_PORT)) 
+	if(udp->source != endian16(DHCP_SERVER_PORT)) {
 		return false;
-
+	}
 	DHCP* dhcp = (DHCP*)udp->body;
-	uint32_t t_id = endian32(dhcp->transaction_id);
+	uint32_t t_id = endian32(dhcp->xid);
 
 	DHCPOption* dop = (DHCPOption*)dhcp->options;
 
@@ -239,11 +240,11 @@ bool dhcp_process(Packet* _packet) {
 
 	uint32_t your_ip = 0; 
 	uint32_t gateway_ip = 0;
-
+	
 	switch (*(dop->data)) {
 		case DHCP_TYPE_OFFER:
-			your_ip = endian32(dhcp->your_ip);
-			gateway_ip = endian32(dhcp->gateway_ip);
+			your_ip = endian32(dhcp->yiaddr);
+			gateway_ip = endian32(dhcp->giaddr);
 
 			if(dhcp_session->discover_timer_id && event_timer_remove(dhcp_session->discover_timer_id))
 				dhcp_session->discover_timer_id = 0;
@@ -252,8 +253,7 @@ bool dhcp_process(Packet* _packet) {
 			dhcp_session->gateway_ip = gateway_ip;
 
 			dhcp_request(dhcp_session);
-			dhcp_session->offered(packet->nic, t_id, your_ip, NULL); 
-			printf("here offer \n");
+			dhcp_session->offered(packet->nic, t_id, your_ip, dhcp_session->context); 
 			break;
 		case DHCP_TYPE_ACK:
 			your_ip = dhcp_session->your_ip;
@@ -262,8 +262,9 @@ bool dhcp_process(Packet* _packet) {
 				dhcp_session->request_timer_id = 0;
 
 			dhcp_bound(packet->nic, t_id);
-			dhcp_session->acked(packet->nic, t_id, your_ip, NULL); 
+			dhcp_session->acked(packet->nic, t_id, your_ip, dhcp_session->context); 
 			nic_ip_add(packet->nic, your_ip);
+			
 			break;
 		case DHCP_TYPE_NAK:
 			dhcp_session->nic = NULL;
@@ -305,6 +306,8 @@ bool dhcp_discover(DHCPSession* dhcp_session) {
 		errno = DHCP_ERROR_NO_PACKET;
 		return false;
 	}
+
+	memset(packet->buffer + packet->start, 0, sizeof(Ether) + sizeof(IP) + sizeof(UDP) + sizeof(DHCP) + 26);
 	
 	//ethernet
 	Ether* ether = (Ether*)(packet->buffer + packet->start);
@@ -318,42 +321,36 @@ bool dhcp_discover(DHCPSession* dhcp_session) {
 	ip->version = endian8(4);
 	ip->ecn = endian8(0); 
 	ip->dscp = endian8(0);
-	//ip->id = endian16(ip_id);
+	//TODO
+//	ip->id = endian16(0);
 	ip->flags_offset = 0x00;
 	ip->ttl = endian8(IP_TTL);
 	ip->protocol = endian8(IP_PROTOCOL_UDP);
 	ip->source = endian32(0x00000000);
 	ip->destination = endian32(0xffffffff);
-	//length
-	//id
-	//checksum
 
 	//udp
 	UDP* udp = (UDP*)ip->body;
-	udp->source = endian16(0x0044);
-	udp->destination = endian16(0x0043);
+	udp->source = endian16(DHCP_CLIENT_PORT);
+	udp->destination = endian16(DHCP_SERVER_PORT);
 	
 	//dhcp
 	DHCP* dhcp = (DHCP*)udp->body;
-	dhcp->op_code = endian8(0x0001);
-	dhcp->hw_type = endian8(0x0001);
-	dhcp->hw_length = endian8(6);
+	dhcp->op = endian8(0x0001);
+	dhcp->htype = endian8(0x0001);
+	dhcp->hlen = endian8(6);
 	dhcp->hops = endian8(0x0000);
-	dhcp->transaction_id = endian32(transaction_id);
-	
-	//second
+	dhcp->xid = endian32(transaction_id);
+	//seconds
 	dhcp->flags = endian8(0x0000);
-	dhcp->client_ip = endian32(0x00000000);
-	dhcp->your_ip = endian32(0x00000000);
-	dhcp->server_ip = endian32(0x00000000);
-	dhcp->gateway_ip = endian32(0x00000000);
-	dhcp->client_hw_addr = endian64((nic->mac)<<16);
-	dhcp->client_hw_addr_padding = endian64(0);
+	dhcp->ciaddr = endian32(0x00000000);
+	dhcp->yiaddr = endian32(0x00000000);
+	dhcp->siaddr = endian32(0x00000000);
+	dhcp->giaddr = endian32(0x00000000);
 	
-	//file name 
-	//server name
-	dhcp->magic_cookie = endian32(DHCP_MAGICCOOKIE); 
+	*(dhcp->chaddr) = endian48(nic->mac);
 
+	dhcp->magic_cookie = endian32(DHCP_MAGICCOOKIE); 
 	//dhcp option for message_type
 	DHCPOption* message_type =  (DHCPOption*)dhcp->options;
 	message_type->code = endian8(DHCP_OPTION_MESSAGE_TYPE);
@@ -407,8 +404,12 @@ uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void*
 			discover_count=0;
 			return false;
 		}
-
 		return true;
+	}
+
+	if(!nic) {
+		errno = DHCP_ERROR_NO_NIC;
+		return 0;
 	}
 
 	Map* session_map = nic_config_get(nic, DHCP_SESSION);
@@ -443,6 +444,7 @@ uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void*
 	dhcp_session->nic = nic;
 	dhcp_discover(dhcp_session);
 
+
 	uint64_t timer_id = event_timer_add(dhcp_timercallback, dhcp_session, 5000000, 5000000);
 	//printf("timer %d\n", timer_id);
 	dhcp_session->discover_timer_id = timer_id;
@@ -450,3 +452,23 @@ uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void*
 	return transaction_id;
 }
 
+
+List* dhcp_ip_get_all(NIC* nic) {
+	List* ip_list = list_create(NULL);
+	if(!ip_list){
+		return NULL;
+	}
+
+	Map* interfaces = nic_config_get(nic, NIC_ADDR_IPv4);
+	if(!interfaces)
+		return NULL;
+
+	MapIterator iter;
+	map_iterator_init(&iter, interfaces);
+	while(map_iterator_has_next(&iter)) {
+		MapEntry* entry = map_iterator_next(&iter);
+		list_add(ip_list, entry->key); 
+	}
+
+	return ip_list;
+}

@@ -2,6 +2,7 @@
 #define __NET_DHCP_H__
 
 #include <net/nic.h>
+#include <util/list.h>
 #include <errno.h>
 							// code length
 #define DHCP_OPTION_MESSAGE_TYPE  		0x35	// 53	1
@@ -49,24 +50,24 @@
  * DHCP payload
  */
 typedef struct _DHCP {
-	uint8_t op_code;
-	uint8_t hw_type;
-	uint8_t hw_length;
+	uint8_t op;
+	uint8_t htype;
+	uint8_t hlen;
 	uint8_t hops;
 
-	uint32_t transaction_id;
-	uint16_t seconds;
+	uint32_t xid;
+	uint16_t secs;
 	uint16_t flags;
 	
-	uint32_t client_ip;
-	uint32_t your_ip;
-	uint32_t server_ip;
-	uint32_t gateway_ip;
+	uint32_t ciaddr;
+	uint32_t yiaddr;
+	uint32_t siaddr;
+	uint32_t giaddr;
 
-	uint64_t client_hw_addr;	// 128
-	uint64_t client_hw_addr_padding;// Zero
-	uint64_t server_name[8];	// 64
-	uint64_t file_name[16];		// 128	zero padding
+	uint64_t chaddr[2];	// 128
+//	uint64_t chaddr_padding;// Zero
+	char sname[64];	// 64
+	char fname[128];		// 128	zero padding
 
 	uint32_t magic_cookie;
 	uint8_t options[0];
@@ -119,5 +120,5 @@ bool dhcp_process(Packet* packet);
  */
 uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* context);
 
-
+List* dhcp_ip_get_all(NIC* nic);
 #endif /* __NET_DHCP_H__ */
