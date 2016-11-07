@@ -253,7 +253,8 @@ bool dhcp_process(Packet* _packet) {
 			dhcp_session->gateway_ip = gateway_ip;
 
 			dhcp_request(dhcp_session);
-			dhcp_session->offered(packet->nic, t_id, your_ip, dhcp_session->context); 
+			if(dhcp_session->offered)
+				dhcp_session->offered(packet->nic, t_id, your_ip, dhcp_session->context); 
 			break;
 		case DHCP_TYPE_ACK:
 			your_ip = dhcp_session->your_ip;
@@ -262,7 +263,8 @@ bool dhcp_process(Packet* _packet) {
 				dhcp_session->request_timer_id = 0;
 
 			dhcp_bound(packet->nic, t_id);
-			dhcp_session->acked(packet->nic, t_id, your_ip, dhcp_session->context); 
+			if(dhcp_session->acked)
+				dhcp_session->acked(packet->nic, t_id, your_ip, dhcp_session->context); 
 			nic_ip_add(packet->nic, your_ip);
 			
 			break;
