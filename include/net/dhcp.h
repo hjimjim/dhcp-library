@@ -6,6 +6,7 @@
 #include <errno.h>
 							// code length
 #define DHCP_OPTION_MESSAGE_TYPE  		0x35	// 53	1
+#define DHCP_OPTION_SEVER_IDENTIFIER  		0x36	// 54	4
 #define DHCP_OPTION_CLIENT_IDENTIFIER		0x3d	// 61	7
 #define DHCP_OPTION_REQUESTED_IP_ADDRESS	0x32 	// 50	4
 #define DHCP_OPTION_HOST_NAME			0x0c	// 12	14
@@ -88,8 +89,8 @@ typedef struct _DHCPSession {
 	uint32_t transaction_id;
 	uint32_t your_ip;	// Your IP
 	uint32_t gateway_ip;	// GW IP
-	uint32_t discover_timer_id;	
-	uint32_t request_timer_id;	
+	uint64_t discover_timer_id;	
+	uint64_t request_timer_id;	
 	DHCPCallback discovered;
 	DHCPCallback offered;
 	DHCPCallback acked;
