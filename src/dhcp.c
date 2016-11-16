@@ -61,22 +61,21 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 	ip->flags_offset = 0x00;
 	ip->ttl = endian8(IP_TTL);
 	ip->protocol = endian8(IP_PROTOCOL_UDP);
-	ip->source = endian32(0x010101fe);
+	ip->source = endian32(0x00000000);
+//	ip->source = endian32(0x010101fe);
 	ip->destination = endian32(0xffffffff);
-	//length
 	//id
-	//checksum
 
 	UDP* udp = (UDP*)ip->body;
 	udp->source = endian16(0x0044);
 	udp->destination = endian16(0x0043);
 
 	DHCP* dhcp = (DHCP*)udp->body;
-	dhcp-> op = endian8(0x0001);
-	dhcp-> htype = endian8(0x0001);
-	dhcp-> hlen = endian8(6);
+	dhcp->op = endian8(0x0001);
+	dhcp->htype = endian8(0x0001);
+	dhcp->hlen = endian8(6);
 	//TODO: calculate hops
-	dhcp-> hops = endian8(0x0000);
+	dhcp->hops = endian8(0x0000);
 
 	//transactionId
 	//second
@@ -91,7 +90,7 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 	*dhcp->chaddr = endian48(nic->mac);
 
 	dhcp->magic_cookie = endian32(DHCP_MAGICCOOKIE); 
-//
+	
 	//dhcp option for message_type
 	DHCPOption* message_type =  (DHCPOption*)dhcp->options;
 	message_type->code = endian8(DHCP_OPTION_MESSAGE_TYPE);
@@ -105,34 +104,25 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 	*(uint16_t*)((client_identifier->data) + 1) = endian16((nic->mac)>>32);
 	*(uint32_t*)((client_identifier->data) + 3) = endian32(*(uint32_t*)(&(nic->mac)));
 
-
-
 	DHCPOption* dhcp_server = (DHCPOption*)(((client_identifier->data) + 0x07));
-	dhcp_server -> code = endian8(DHCP_OPTION_SEVER_IDENTIFIER);
-	dhcp_server -> length = endian8(0x04); 
-	*(uint32_t*)((dhcp_server->data)) = endian32(0x0a000003);
-
-
-
+	dhcp_server->code = endian8(DHCP_OPTION_SEVER_IDENTIFIER);
+	dhcp_server->length = endian8(0x04); 
+	*(uint32_t*)((dhcp_server->data)) = endian32(dhcp_session->server_ip);
 
 	DHCPOption* requested_ip = (DHCPOption*)(((dhcp_server->data) + 0x04));
+//	DHCPOption* requested_ip = (DHCPOption*)(((client_identifier->data) + 0x07));
 	requested_ip->code = endian8(DHCP_OPTION_REQUESTED_IP_ADDRESS);
 	requested_ip->length = endian8(0x04);
 	*(uint32_t*)((requested_ip->data)) = endian32(dhcp_session->your_ip);
 
-
-
-	
-
-
 	DHCPOption* host_name = (DHCPOption*)(((requested_ip->data) + 0x04));
-	host_name -> code = endian8(DHCP_OPTION_HOST_NAME); 
-	host_name -> length = endian8(0x04); 
+	host_name->code = endian8(DHCP_OPTION_HOST_NAME); 
+	host_name->length = endian8(0x04); 
 	*(uint32_t*)((host_name->data)) = endian32(0x504b4c42);
 
 	DHCPOption* parameter_request = (DHCPOption*)(((host_name->data) + 0x04));
-	parameter_request -> code = endian8(DHCP_OPTION_PARAMETER_REQUEST_LIST); 
-	parameter_request -> length= endian8(0x03);
+	parameter_request->code = endian8(DHCP_OPTION_PARAMETER_REQUEST_LIST); 
+	parameter_request->length= endian8(0x03);
 	*(parameter_request->data) = DHCP_OPTION_SUBNETMASK;
 	*((parameter_request->data) + 1) = DHCP_OPTION_ROUTERADDRESS;
 	*((parameter_request->data) + 2) = DHCP_OPTION_DOMAIN_NAME;
@@ -151,7 +141,7 @@ bool dhcp_request(DHCPSession* dhcp_session) {
 	return true;
 } 
 
-bool dhcp_bound(NIC* nic, uint32_t key) {
+bool dhcp_bound(NIC* nic, uint32_t key,uint32_t lease_time) {
 	bool dhcp_resend_callback(void* context) {
 		DHCPSession* session = context;
 		dhcp_request(session);
@@ -170,7 +160,7 @@ bool dhcp_bound(NIC* nic, uint32_t key) {
 		return false;
 	}
 
- 	uint64_t timer_id = event_timer_add(dhcp_resend_callback, dhcp_session, 60000000, 1800000000);
+ 	uint64_t timer_id = event_timer_add(dhcp_resend_callback, dhcp_session, lease_time*1000000, lease_time*1000000);
 	dhcp_session->request_timer_id = timer_id;
 	
 	return true;
@@ -219,6 +209,19 @@ static bool dhcp_distroy_session(NIC* nic, uint32_t t_id) {
 	return true;
 }
 
+uint32_t dhcp_option_parser(DHCPOption* dop) {
+	uint8_t code = dop->code;	
+	uint8_t length = dop->length;	
+	while(dop->code != DHCP_OPTION_END) {		
+		if(code == DHCP_OPTION_LEASE_TIME) {
+			return  endian32(*(uint32_t*)(dop->data));			
+		}
+		dop = (DHCPOption*)(((dop->data) + length));
+		code = dop->code;
+		length = dop->length;
+	}
+	return 0;
+}
 bool dhcp_process(Packet* _packet) {
 	Packet* packet = _packet;
 	if(!packet) {
@@ -259,13 +262,16 @@ bool dhcp_process(Packet* _packet) {
 		return false;
 	}
 
+	
 	uint32_t your_ip = 0; 
 	uint32_t gateway_ip = 0;
-	
+	uint32_t server_ip = 0;
+	static uint32_t lease_time = 1800;
 	switch (*(dop->data)) {
 		case DHCP_TYPE_OFFER:
 			your_ip = endian32(dhcp->yiaddr);
 			gateway_ip = endian32(dhcp->giaddr);
+			server_ip = endian32(dhcp->siaddr);
 
 			if(dhcp_session->discover_timer_id && event_timer_remove(dhcp_session->discover_timer_id)) {
 				dhcp_session->discover_timer_id = 0;
@@ -273,10 +279,13 @@ bool dhcp_process(Packet* _packet) {
 
 			dhcp_session->your_ip = your_ip;
 			dhcp_session->gateway_ip = gateway_ip;
+			dhcp_session->server_ip = server_ip;
+			lease_time = dhcp_option_parser(dop);
 
 			dhcp_request(dhcp_session);
 			if(dhcp_session->offered)
 				dhcp_session->offered(packet->nic, t_id, your_ip, dhcp_session->context); 
+
 			break;
 		case DHCP_TYPE_ACK:
 			your_ip = dhcp_session->your_ip;
@@ -284,7 +293,7 @@ bool dhcp_process(Packet* _packet) {
 			if(dhcp_session->request_timer_id && event_timer_remove(dhcp_session->request_timer_id)) 
 				dhcp_session->request_timer_id = 0;
 
-			dhcp_bound(packet->nic, t_id);
+			dhcp_bound(packet->nic, t_id, lease_time);
 			if(dhcp_session->acked)
 				dhcp_session->acked(packet->nic, t_id, your_ip, dhcp_session->context); 
 			nic_ip_add(packet->nic, your_ip);
@@ -295,6 +304,7 @@ bool dhcp_process(Packet* _packet) {
 			dhcp_session->nic = NULL;
 			dhcp_session->your_ip = 0; 		
 			dhcp_session->gateway_ip = 0; 		
+			dhcp_session->server_ip = 0; 		
 			dhcp_session->discover_timer_id = 0;
 			dhcp_session->request_timer_id = 0;
 			dhcp_session->discovered = NULL;
@@ -307,6 +317,8 @@ bool dhcp_process(Packet* _packet) {
 
 	return true;
 }
+
+
 
 bool dhcp_discover(DHCPSession* dhcp_session) {
 	if(!dhcp_session) {
@@ -395,8 +407,8 @@ bool dhcp_discover(DHCPSession* dhcp_session) {
 	*(uint32_t*)((requested_ip->data)) = endian32(0);
 
 	DHCPOption* parameter_request = (DHCPOption*)(((requested_ip->data) + 0x04));
-	parameter_request -> code = endian8(DHCP_OPTION_PARAMETER_REQUEST_LIST); 
-	parameter_request -> length= endian8(0x03);
+	parameter_request->code = endian8(DHCP_OPTION_PARAMETER_REQUEST_LIST); 
+	parameter_request->length= endian8(0x03);
 	*(parameter_request->data) = DHCP_OPTION_SUBNETMASK;
 	*((parameter_request->data) + 1) = DHCP_OPTION_ROUTERADDRESS;
 	*((parameter_request->data) + 2) = DHCP_OPTION_DOMAIN_NAME;
@@ -404,8 +416,8 @@ bool dhcp_discover(DHCPSession* dhcp_session) {
 	DHCPOption* end = (DHCPOption*)(((parameter_request->data) + 0x03));
 	end->code = endian8(DHCP_OPTION_END);
 
-	//udp_pack(packet, sizeof(DHCP) + 32);
 	udp_pack(packet, sizeof(DHCP) + 32);
+	//udp_pack(packet, sizeof(DHCP) + 24);
 	if(!nic_output(packet->nic, packet)) {
 		errno = DHCP_ERROR_DISCOVER_FAIL;	
 	}
@@ -419,7 +431,7 @@ uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void*
 		DHCPSession* session = context;
 		static int discover_count = 0;
 
-		if(discover_count <= 5) {
+		if(discover_count < 5) {
 			printf("send dhcp again \n");
 			dhcp_discover(session);
 			discover_count++;

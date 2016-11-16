@@ -5,19 +5,20 @@
 #include <util/list.h>
 #include <errno.h>
 							// code length
-#define DHCP_OPTION_MESSAGE_TYPE  		0x35	// 53	1
-#define DHCP_OPTION_SEVER_IDENTIFIER  		0x36	// 54	4
-#define DHCP_OPTION_CLIENT_IDENTIFIER		0x3d	// 61	7
-#define DHCP_OPTION_REQUESTED_IP_ADDRESS	0x32 	// 50	4
-#define DHCP_OPTION_HOST_NAME			0x0c	// 12	14
 #define DHCP_OPTION_SUBNETMASK			0x01	// 1 	4
 #define DHCP_OPTION_ROUTERADDRESS		0x03	// 3 	4
 #define DHCP_OPTION_DOMAINNAMESERVER		0x06	// 6 	8
+#define DHCP_OPTION_HOST_NAME			0x0c	// 12	14
 #define DHCP_OPTION_DOMAIN_NAME			0x0f	// 15	9
-#define DHCP_OPTION_VENDOR_CLASS_IDENTIFIER	0x3c	// 60	8
+#define DHCP_OPTION_REQUESTED_IP_ADDRESS	0x32 	// 50	4
+#define DHCP_OPTION_LEASE_TIME			0x33 	// 51	4
+#define DHCP_OPTION_MESSAGE_TYPE  		0x35	// 53	1
+#define DHCP_OPTION_SEVER_IDENTIFIER  		0x36	// 54	4
 #define DHCP_OPTION_PARAMETER_REQUEST_LIST	0x37	// 55	11
 #define DHCP_OPTION_RENEWAL_TIME_VALUE		0x3a	// 58	4
 #define DHCP_OPTION_REBINDING_TIME_VALUE	0x3b	// 59	4
+#define DHCP_OPTION_VENDOR_CLASS_IDENTIFIER	0x3c	// 60	8
+#define DHCP_OPTION_CLIENT_IDENTIFIER		0x3d	// 61	7
 #define DHCP_OPTION_END				0xff	// 255
 
 #define DHCP_CLIENT_PORT	68
@@ -89,6 +90,7 @@ typedef struct _DHCPSession {
 	uint32_t transaction_id;
 	uint32_t your_ip;	// Your IP
 	uint32_t gateway_ip;	// GW IP
+	uint32_t server_ip;	// GW IP
 	uint64_t discover_timer_id;	
 	uint64_t request_timer_id;	
 	DHCPCallback discovered;
