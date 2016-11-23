@@ -1,0 +1,24 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+DHCP_SESSION	dhcp.c	19;"	d	file:
+HOST_NAME	dhcp.c	20;"	d	file:
+MAX	dhcp.c	18;"	d	file:
+dhcp_bound	dhcp.c	/^static bool dhcp_bound(NIC* nic, uint32_t key,uint32_t lease_time) {$/;"	f	file:
+dhcp_bound_state	dhcp.c	/^void dhcp_bound_state(DHCPWatchState *state) {$/;"	f
+dhcp_discover	dhcp.c	/^static bool dhcp_discover(DHCPSession* dhcp_session) {$/;"	f	file:
+dhcp_distroy_session	dhcp.c	/^static bool dhcp_distroy_session(NIC* nic, uint32_t t_id) {$/;"	f	file:
+dhcp_init	dhcp.c	/^bool dhcp_init(NIC* nic) {$/;"	f
+dhcp_init_state	dhcp.c	/^void dhcp_init_state(DHCPWatchState *state) {$/;"	f
+dhcp_lease_ip	dhcp.c	/^uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* context) {$/;"	f
+dhcp_option_parser	dhcp.c	/^static uint32_t dhcp_option_parser(DHCPOption* dop) {$/;"	f	file:
+dhcp_process	dhcp.c	/^bool dhcp_process(Packet* _packet) {$/;"	f
+dhcp_rebinding_state	dhcp.c	/^void dhcp_rebinding_state(DHCPWatchState *state) {$/;"	f
+dhcp_renewing_state	dhcp.c	/^void dhcp_renewing_state(DHCPWatchState *state) {$/;"	f
+dhcp_request	dhcp.c	/^static bool dhcp_request(DHCPSession* dhcp_session) {$/;"	f	file:
+dhcp_requesting_state	dhcp.c	/^void dhcp_requesting_state(DHCPWatchState *state) {$/;"	f
+dhcp_selecting_state	dhcp.c	/^void dhcp_selecting_state(DHCPWatchState *state) {$/;"	f
+dhcp_state_init	dhcp.c	/^void dhcp_state_init(DHCPWatchState *state) {$/;"	f

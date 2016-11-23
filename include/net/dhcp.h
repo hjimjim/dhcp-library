@@ -38,6 +38,21 @@
 #define DHCP_CLIENT_PORT				68
 #define DHCP_SERVER_PORT				67
 
+#define DHCP_MAGICCOOKIE				0x63825363  // 99.130.83.99
+
+#define DHCP_ERROR_INIT_FAIL				1
+#define DHCP_ERROR_DISCOVER_FAIL			2
+#define DHCP_ERROR_REQUEST_FAIL				3
+#define DHCP_ERROR_NO_NIC				4
+#define DHCP_ERROR_NO_MAP				5
+#define DHCP_ERROR_NO_PACKET				6
+#define DHCP_ERROR_NO_SESSION				7
+#define DHCP_ERROR_NO_STATE				8 
+#define DHCP_ERROR_NIC_CONFIG_FAIL			9 	
+#define DHCP_ERROR_MAP_REMOVE_FAIL			10 
+#define DHCP_ERROR_MALLOC_FAIL				11
+#define DHCP_ERROR_TID					12
+
 #define DHCP_TYPE_INIT					0
 #define DHCP_TYPE_DISCOVER				1
 #define DHCP_TYPE_OFFER					2
@@ -48,19 +63,22 @@
 #define DHCP_TYPE_RELEASE				7
 #define DHCP_TYPE_INFORM				8
 
-#define DHCP_MAGICCOOKIE				0x63825363  // 99.130.83.99
+
+//typedef void (*dhcp_init_func)(watch_state *st);
+//typedef void (*dhcp_selecting_func)(watch_state *st);
+//typedef void (*dhcp_requesting_func)(watch_state *st);
+//typedef void (*dhcp_bound_func)(watch_state *st);
+//typedef void (*dhcp_rebinding_func)(watch_state *st);
+//typedef void (*dhcp_renewing_func)(watch_state *st);
 
 
-#define DHCP_ERROR_INIT_FAIL				1
-#define DHCP_ERROR_DISCOVER_FAIL			2
-#define DHCP_ERROR_REQUEST_FAIL				3
-#define DHCP_ERROR_NO_NIC				4
-#define DHCP_ERROR_NO_MAP				5
-#define DHCP_ERROR_NO_PACKET				6
-#define DHCP_ERROR_NO_SESSION				7
-#define DHCP_ERROR_NIC_CONFIG_FAIL			8	
-#define DHCP_ERROR_MAP_REMOVE_FAIL			9
-#define DHCP_ERROR_TID					10
+typedef enum dhcp_state_tag dhcp_state;
+typedef struct _DHCPState DHCPState;
+typedef void (*dhcp_state_func)(DHCPState *st);
+
+enum dhcp_state_tag { INIT, SELECTING, REQUESTING, BOUND, REBINDING, RENEWING };
+
+
 
 typedef struct _DHCP {
 	uint8_t op;
@@ -94,6 +112,7 @@ typedef struct _DHCPOption {
 
 typedef bool(*DHCPCallback)(NIC* nic, uint32_t transaction_id, uint32_t ip, void* context);
 
+
 typedef struct _DHCPSession {
 	NIC* nic;
 	uint32_t transaction_id;
@@ -102,11 +121,27 @@ typedef struct _DHCPSession {
 	uint32_t server_ip;	
 	uint64_t discover_timer_id;	
 	uint64_t request_timer_id;	
+	uint32_t lease_time;	
 	DHCPCallback discovered;
 	DHCPCallback offered;
 	DHCPCallback acked;
 	void* context;
 } DHCPSession;
+
+struct _DHCPState {
+//	dhcp_init_func init;
+//	dhcp_selecting_func selecting;
+//	dhcp_requesting_func requesting;
+//	dhcp_bound_func bound;
+//	dhcp_rebinding_func rebinding;
+//	dhcp_renewing_func renewing;	
+
+	dhcp_state current_state;
+	dhcp_state_func next_state;
+	DHCPSession* session;
+	uint8_t received_packet_state;
+	uint32_t lease_timer;
+};
 
 
 /**
