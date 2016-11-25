@@ -65,7 +65,7 @@
 #define DHCP_TYPE_INFORM				8
 
 typedef struct _DHCPState DHCPState;
-typedef void (*dhcp_state_func)(DHCPState *st);
+typedef void (*dhcp_state_func[2])(DHCPState *st);
 
 typedef enum _DHCP_STATE_TAG { INIT, SELECTING, REQUESTING, BOUND, REBINDING, RENEWING }DHCP_STATE_TAG;
 

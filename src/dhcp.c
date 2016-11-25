@@ -22,20 +22,32 @@ static void dhcp_bound_state(DHCPState *state);
 static void dhcp_init_state(DHCPState *state);
 
 void dhcp_state_init(DHCPState *state) {
-	state->next_state = NULL;
+	state->next_state[0] = NULL;
+	state->next_state[1] = NULL;
 	state->session->lease_time = 0;
 }
 
-static inline void return_to_init(DHCPState* state) {
-	state->message_type = 0;
-
+static void return_to_init(DHCPState* state) {
 	DHCPSession* session = state->session;
+	event_timer_remove(session->request_timer_id);
+	event_timer_remove(session->discover_timer_id);
+
 	session->your_ip = 0; 		
 	session->gateway_ip = 0; 		
 	session->server_ip = 0; 		
 	session->discover_timer_id = 0;
 	session->request_timer_id = 0;
-	state->next_state = dhcp_init_state;
+
+	session->lease_time = 0;
+	session->discovered = NULL;
+	session->offered = NULL;
+	session->acked = NULL;
+
+	state->current_state = INIT;
+	//TODO
+	state->next_state[0] = dhcp_init_state;
+	state->next_state[1] = dhcp_init_state;
+	state->message_type = 0;
 }
 
 static bool create_packet(DHCPState* dhcp_state, uint8_t dhcp_message_type) {
@@ -194,11 +206,8 @@ static void dhcp_renewing_state(DHCPState* state) {
 	/* Action */
 
 	/* Next transaction states */
-	if(state->message_type == DHCP_TYPE_ACK) {
-		state->next_state = dhcp_bound_state;
-	} else if(state->message_type == DHCP_TYPE_NAK){
-		return_to_init(state);
-	}
+	state->next_state[0] = dhcp_bound_state;
+	state->next_state[1] = return_to_init;
 }
 
 static void dhcp_bound_state(DHCPState* state) {
@@ -210,19 +219,14 @@ static void dhcp_bound_state(DHCPState* state) {
 
 	/* Action */
 	DHCPSession* session = state->session;
+	if(session->request_timer_id && event_timer_remove(session->request_timer_id)) 
+		session->request_timer_id = 0;
+	if(session->acked)
+		session->acked(session->nic, session->transaction_id, session->your_ip, session->context);
 
 	/* Next transaction states */
-	if(state->message_type == DHCP_TYPE_ACK) {
-		state->message_type = 0;
-		if(session->request_timer_id && event_timer_remove(session->request_timer_id)) 
-				session->request_timer_id = 0;
-		if(session->acked)
-			session->acked(session->nic, session->transaction_id, session->your_ip, session->context); 
-		state->next_state = dhcp_renewing_state;
-	} else if(state->message_type == DHCP_TYPE_NAK){
-		return_to_init(state);
-	}
-
+	state->next_state[0] = dhcp_renewing_state;
+	state->next_state[1] = return_to_init;
 }
 
 static void dhcp_requesting_state(DHCPState* state) {
@@ -242,16 +246,14 @@ static void dhcp_requesting_state(DHCPState* state) {
 	DHCPSession* session = state->session;
 	uint32_t lease_time = session->lease_time;
 	
+	//nic_ip_add(session->nic, session->your_ip);
+
 	/* Next transaction states */
-	if(state->message_type == DHCP_TYPE_NAK) {
-		return_to_init(state);
-	} else if(state->message_type == DHCP_TYPE_ACK) {
-		uint64_t timer_id = event_timer_add(dhcp_resend_callback, state, lease_time*1000000, lease_time*1000000);
-		session->request_timer_id = timer_id;
-		state->next_state = dhcp_bound_state;
-		//nic_ip_add(session->nic, session->your_ip);
-	//	printf("ACK\n");
-	} 
+	uint64_t timer_id = event_timer_add(dhcp_resend_callback, state, lease_time*1000000, lease_time*1000000);
+	session->request_timer_id = timer_id;
+
+	state->next_state[0] = dhcp_bound_state;
+	state->next_state[1] = return_to_init;
 }
 
 static void dhcp_selecting_state(DHCPState* state) {
@@ -274,15 +276,10 @@ static void dhcp_selecting_state(DHCPState* state) {
 		session->offered(session->nic, session->transaction_id, session->your_ip, session->context); 
 	}
 	bool check = create_packet(state, DHCP_TYPE_REQUEST);
-
+	printf("check %d \n", check);
 	/* Next transaction states */
-	if(check) {
-		state->next_state = dhcp_requesting_state;
-		//printf("hererererer \n\n\n");
-	} else {
-		state->next_state = dhcp_init_state;
-		//printf("nonononononono \n\n\n");
-	}
+	state->next_state[0] = dhcp_requesting_state;
+	state->next_state[1] = dhcp_init_state;
 }
 
 static void dhcp_init_state(DHCPState* state) {
@@ -313,15 +310,12 @@ static void dhcp_init_state(DHCPState* state) {
 
 	/* Action */
 	DHCPSession* session = state->session;
-	bool check = create_packet(state, DHCP_TYPE_DISCOVER);
+	create_packet(state, DHCP_TYPE_DISCOVER);
 	uint64_t timer_id = event_timer_add(dhcp_timercallback, state, 5000000, 5000000);
 	session->discover_timer_id = timer_id;
 
 	/* Next transaction states */
-	if(check) {
-		state->next_state = dhcp_selecting_state;
-		printf("!!!!!!!!!!!!!!!!!!!!!!!change to state %d\n\n\n", state->current_state);
-	}
+	state->next_state[0] = dhcp_selecting_state;
 }
 
 
@@ -470,7 +464,7 @@ bool dhcp_process(Packet* _packet) {
 	dhcp_state->message_type = *(dop->data);
 
 	DHCPState* d_state = dhcp_state;
-	dhcp_state->next_state(d_state);
+	dhcp_state->next_state[(*(dop->data)%6) ? 0:1](d_state);
 
 	return true;
 }
