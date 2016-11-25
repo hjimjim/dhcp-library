@@ -18,17 +18,16 @@
 #define DHCP_SESSION	"net.dhcp.sessiontable"
 #define HOST_NAME 	0x504b4c42 		//PKLB
 
-static void dhcp_bound_state(DHCPState *state);
-static void dhcp_init_state(DHCPState *state);
+static void dhcp_bound_state(DHCPSession *session);
+static void dhcp_init_state(DHCPSession *session);
 
-void dhcp_state_init(DHCPState *state) {
-	state->next_state[0] = NULL;
-	state->next_state[1] = NULL;
-	state->session->lease_time = 0;
+void dhcp_state_init(DHCPSession *session) {
+	session->next_state[0] = NULL;
+	session->next_state[1] = NULL;
+	session->lease_time = 0;
 }
 
-static void return_to_init(DHCPState* state) {
-	DHCPSession* session = state->session;
+static void return_to_init(DHCPSession* session) {
 	event_timer_remove(session->request_timer_id);
 	event_timer_remove(session->discover_timer_id);
 
@@ -43,19 +42,13 @@ static void return_to_init(DHCPState* state) {
 	session->offered = NULL;
 	session->acked = NULL;
 
-	state->current_state = INIT;
+	session->current_state = INIT;
 	//TODO
-	state->next_state[0] = dhcp_init_state;
-	state->next_state[1] = dhcp_init_state;
-	state->message_type = 0;
+	session->next_state[0] = dhcp_init_state;
+	session->next_state[1] = dhcp_init_state;
 }
 
-static bool create_packet(DHCPState* dhcp_state, uint8_t dhcp_message_type) {
-	if(!dhcp_state) {
-		errno = DHCP_ERROR_NO_STATE;
-		return false;
-	}
-	DHCPSession* dhcp_session = dhcp_state->session;
+static bool create_packet(DHCPSession* dhcp_session, uint8_t dhcp_message_type) {
 
 	if(!dhcp_session) {
 		errno = DHCP_ERROR_NO_SESSION;
@@ -173,124 +166,112 @@ static bool create_packet(DHCPState* dhcp_state, uint8_t dhcp_message_type) {
 }
 
 static bool dhcp_distroy_session(NIC* nic, uint32_t t_id) {
-	Map* state_map = nic_config_get(nic, DHCP_SESSION);
-	if(!state_map) {
+	Map* session_map = nic_config_get(nic, DHCP_SESSION);
+	if(!session_map) {
 		errno = DHCP_ERROR_NO_MAP;
 		return false;
 	}
 
-	DHCPState* dhcp_state = map_get(state_map, (void*)(uintptr_t)t_id);
-	if(!dhcp_state) {
-		errno = DHCP_ERROR_NO_STATE;
+	DHCPSession* dhcp_session = map_get(session_map, (void*)(uintptr_t)t_id);
+	if(!dhcp_session) {
+		errno = DHCP_ERROR_NO_SESSION;
 		return false;
 	}
 
-	if(!map_remove(state_map, (void*)(uintptr_t)t_id)) {
+	if(!map_remove(session_map, (void*)(uintptr_t)t_id)) {
 		errno = DHCP_ERROR_MAP_REMOVE_FAIL;
 		return false;
 	}
 	
-	free(dhcp_state->session);	
-	free(dhcp_state);
+	free(dhcp_session);
 	return true;
 }
 
-
-
-static void dhcp_renewing_state(DHCPState* state) {
+static void dhcp_renewing_state(DHCPSession* session) {
 	/* Initialize state function */
-	dhcp_state_init(state);
+	dhcp_state_init(session);
 
 	/* Update state */
-	state->current_state = RENEWING;
+	session->current_state = RENEWING;
 	/* Action */
 
 	/* Next transaction states */
-	state->next_state[0] = dhcp_bound_state;
-	state->next_state[1] = return_to_init;
+	session->next_state[0] = dhcp_bound_state;
+	session->next_state[1] = return_to_init;
 }
 
-static void dhcp_bound_state(DHCPState* state) {
+static void dhcp_bound_state(DHCPSession* session) {
 	/* Initialize state function */
-	dhcp_state_init(state);
+	dhcp_state_init(session);
 
 	/* Update state */
-	state->current_state = BOUND;
+	session->current_state = BOUND;
 
 	/* Action */
-	DHCPSession* session = state->session;
 	if(session->request_timer_id && event_timer_remove(session->request_timer_id)) 
 		session->request_timer_id = 0;
 	if(session->acked)
 		session->acked(session->nic, session->transaction_id, session->your_ip, session->context);
 
 	/* Next transaction states */
-	state->next_state[0] = dhcp_renewing_state;
-	state->next_state[1] = return_to_init;
+	session->next_state[0] = dhcp_renewing_state;
+	session->next_state[1] = return_to_init;
 }
 
-static void dhcp_requesting_state(DHCPState* state) {
+static void dhcp_requesting_state(DHCPSession* session) {
 	bool dhcp_resend_callback(void* context) {
-		DHCPState* state = context;
+		DHCPSession* state = context;
 		create_packet(state, DHCP_TYPE_REQUEST);
 		return false;
 	}
 
 	/* Initialize state function */
-	dhcp_state_init(state);
+	dhcp_state_init(session);
 
 	/* Update state */
-	state->current_state = REQUESTING;
+	session->current_state = REQUESTING;
 
 	/* Action */
-	DHCPSession* session = state->session;
 	uint32_t lease_time = session->lease_time;
 	
 	//nic_ip_add(session->nic, session->your_ip);
 
 	/* Next transaction states */
-	uint64_t timer_id = event_timer_add(dhcp_resend_callback, state, lease_time*1000000, lease_time*1000000);
+	uint64_t timer_id = event_timer_add(dhcp_resend_callback, session, lease_time*1000000, lease_time*1000000);
 	session->request_timer_id = timer_id;
 
-	state->next_state[0] = dhcp_bound_state;
-	state->next_state[1] = return_to_init;
+	session->next_state[0] = dhcp_bound_state;
+	session->next_state[1] = return_to_init;
 }
 
-static void dhcp_selecting_state(DHCPState* state) {
+static void dhcp_selecting_state(DHCPSession* session) {
 	/* Initialize state function */
-	dhcp_state_init(state);
+	dhcp_state_init(session);
 
 	/* Update state */
-	state->current_state = SELECTING;
+	session->current_state = SELECTING;
 
 	/* Action */
-	if(state->message_type != DHCP_TYPE_OFFER) {
-		return;
-	}
-
-	DHCPSession* session = state->session;
 	if(session->discover_timer_id && event_timer_remove(session->discover_timer_id)) {
 		session->discover_timer_id = 0;
 	}
 	if(session->offered) {
 		session->offered(session->nic, session->transaction_id, session->your_ip, session->context); 
 	}
-	bool check = create_packet(state, DHCP_TYPE_REQUEST);
-	printf("check %d \n", check);
+	create_packet(session, DHCP_TYPE_REQUEST);
 	/* Next transaction states */
-	state->next_state[0] = dhcp_requesting_state;
-	state->next_state[1] = dhcp_init_state;
+	session->next_state[0] = dhcp_requesting_state;
+	session->next_state[1] = dhcp_init_state;
 }
 
-static void dhcp_init_state(DHCPState* state) {
+static void dhcp_init_state(DHCPSession* session) {
 	bool dhcp_timercallback(void* context) {
-		DHCPState* state = context;
-		DHCPSession* session = state->session;
+		DHCPSession* session = context;
 		static int discover_count = 0;
 
 		if(discover_count < 5) {
 			//printf("resend \n\n");
-			create_packet(state, DHCP_TYPE_DISCOVER);
+			create_packet(session, DHCP_TYPE_DISCOVER);
 			discover_count++;
 			return true;
 		} else {
@@ -303,19 +284,18 @@ static void dhcp_init_state(DHCPState* state) {
 	}
 		
 	/* Initialize state function */
-	dhcp_state_init(state);
+	dhcp_state_init(session);
 
 	/* Update state */
-	state->current_state = INIT;
+	session->current_state = INIT;
 
 	/* Action */
-	DHCPSession* session = state->session;
-	create_packet(state, DHCP_TYPE_DISCOVER);
-	uint64_t timer_id = event_timer_add(dhcp_timercallback, state, 5000000, 5000000);
+	create_packet(session, DHCP_TYPE_DISCOVER);
+	uint64_t timer_id = event_timer_add(dhcp_timercallback, session, 5000000, 5000000);
 	session->discover_timer_id = timer_id;
 
 	/* Next transaction states */
-	state->next_state[0] = dhcp_selecting_state;
+	session->next_state[0] = dhcp_selecting_state;
 }
 
 
@@ -325,15 +305,9 @@ bool dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* con
 		return false;
 	}
 
-	Map* state_map = nic_config_get(nic, DHCP_SESSION);
-	if(!state_map) {
+	Map* session_map = nic_config_get(nic, DHCP_SESSION);
+	if(!session_map) {
 		errno = DHCP_ERROR_NO_MAP;
-		return false;
-	}
-
-	DHCPState* dhcp_state = (DHCPState*)malloc(sizeof(DHCPState));
-	if(!dhcp_state) {
-		errno = DHCP_ERROR_MALLOC_FAIL;
 		return false;
 	}
 
@@ -350,11 +324,11 @@ bool dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* con
 	asm volatile("rdtsc" : "=a"(id[0]), "=d"(id[1]));
 
 	uint32_t transaction_id = (_id % TRANSACTIONMAX);
-	while(map_get(state_map, (void*)(uintptr_t)transaction_id)) {
+	while(map_get(session_map, (void*)(uintptr_t)transaction_id)) {
 		asm volatile("rdtsc" : "=a"(id[0]), "=d"(id[1]));
 		transaction_id = (_id % TRANSACTIONMAX);
 	}
-	map_put(state_map, (void*)(uintptr_t)transaction_id, dhcp_state);
+	map_put(session_map, (void*)(uintptr_t)transaction_id, dhcp_session);
 
 	dhcp_session->offered = offered;
 	dhcp_session->acked = acked;
@@ -362,9 +336,7 @@ bool dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* con
 	dhcp_session->transaction_id = transaction_id;
 	dhcp_session->nic = nic;
 
-	memset(dhcp_state, 0, sizeof(DHCPState));
-	dhcp_state->session = dhcp_session;
-	dhcp_init_state(dhcp_state);
+	dhcp_init_state(dhcp_session);
 	return true;
 }
 
@@ -374,14 +346,14 @@ bool dhcp_init(NIC* nic) {
 		return false;
 	}
 
-	Map* state_map = map_create(8, map_uint64_hash, map_uint64_equals, NULL);
-	if(!state_map) {
+	Map* session_map = map_create(8, map_uint64_hash, map_uint64_equals, NULL);
+	if(!session_map) {
 		errno = DHCP_ERROR_NO_MAP;
 		return false;
 	}
 
-	if(!nic_config_put(nic, DHCP_SESSION, (void*)(uintptr_t)state_map)) { 
-		map_destroy(state_map);	
+	if(!nic_config_put(nic, DHCP_SESSION, (void*)(uintptr_t)session_map)) { 
+		map_destroy(session_map);	
 		errno = DHCP_ERROR_NIC_CONFIG_FAIL;
 		return false;
 	}
@@ -410,8 +382,8 @@ bool dhcp_process(Packet* _packet) {
 		return false;
 	}
 
-	Map* state_map = nic_config_get(packet->nic, DHCP_SESSION);
-	if(!state_map) {
+	Map* session_map = nic_config_get(packet->nic, DHCP_SESSION);
+	if(!session_map) {
 		errno = DHCP_ERROR_NO_SESSION;
 		return false;
 	}
@@ -433,13 +405,7 @@ bool dhcp_process(Packet* _packet) {
 
 	DHCPOption* dop = (DHCPOption*)dhcp->options;
 
-	DHCPState* dhcp_state = map_get(state_map, (void*)(uintptr_t)t_id);
-	if(!dhcp_state) {
-		errno = DHCP_ERROR_NO_STATE;
-		return false;
-	}
-
-	DHCPSession* dhcp_session = dhcp_state->session;
+	DHCPSession* dhcp_session = map_get(session_map, (void*)(uintptr_t)t_id);
 	if(!dhcp_session) {
 		errno = DHCP_ERROR_NO_SESSION;
 		return false;
@@ -461,10 +427,9 @@ bool dhcp_process(Packet* _packet) {
 	lease_time = dhcp_option_parser(dop);
 	if(lease_time != 0) 
 		dhcp_session->lease_time = lease_time;	
-	dhcp_state->message_type = *(dop->data);
 
-	DHCPState* d_state = dhcp_state;
-	dhcp_state->next_state[(*(dop->data)%6) ? 0:1](d_state);
+	DHCPSession* d_state = dhcp_session;
+	dhcp_session->next_state[(*(dop->data)%6) ? 0:1](d_state);
 
 	return true;
 }

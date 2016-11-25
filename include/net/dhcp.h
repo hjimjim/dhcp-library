@@ -64,8 +64,8 @@
 #define DHCP_TYPE_RELEASE				7
 #define DHCP_TYPE_INFORM				8
 
-typedef struct _DHCPState DHCPState;
-typedef void (*dhcp_state_func[2])(DHCPState *st);
+typedef struct _DHCPSession DHCPSession;
+typedef void (*dhcp_state_func[2])(DHCPSession *st);
 
 typedef enum _DHCP_STATE_TAG { INIT, SELECTING, REQUESTING, BOUND, REBINDING, RENEWING }DHCP_STATE_TAG;
 
@@ -88,7 +88,6 @@ typedef struct _DHCP {
 	uint32_t giaddr;
 
 	uint64_t chaddr[2];	// 128
-//	uint64_t chaddr_padding;// Zero
 	char sname[64];	// 64
 	char fname[128];		// 128	zero padding
 
@@ -117,15 +116,19 @@ typedef struct _DHCPSession {
 	DHCPCallback discovered;
 	DHCPCallback offered;
 	DHCPCallback acked;
+
+	DHCP_STATE_TAG current_state;
+	dhcp_state_func next_state;
+
 	void* context;
 } DHCPSession;
 
-typedef struct _DHCPState {
-	DHCP_STATE_TAG current_state;
-	dhcp_state_func next_state;
-	DHCPSession* session;
-	uint8_t message_type;
-} DHCPState;
+//typedef struct _DHCPState {
+//	DHCP_STATE_TAG current_state;
+//	dhcp_state_func next_state;
+//	DHCPSession* session;
+//	uint8_t message_type;
+//} DHCPState;
 
 /**
  * Make session table for each nic
