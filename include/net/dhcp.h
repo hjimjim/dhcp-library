@@ -52,6 +52,7 @@
 #define DHCP_ERROR_MAP_REMOVE_FAIL			10 
 #define DHCP_ERROR_MALLOC_FAIL				11
 #define DHCP_ERROR_TID					12
+#define DHCP_ERROR_OPTION				13
 
 #define DHCP_TYPE_INIT					0
 #define DHCP_TYPE_DISCOVER				1
@@ -63,22 +64,10 @@
 #define DHCP_TYPE_RELEASE				7
 #define DHCP_TYPE_INFORM				8
 
-
-//typedef void (*dhcp_init_func)(watch_state *st);
-//typedef void (*dhcp_selecting_func)(watch_state *st);
-//typedef void (*dhcp_requesting_func)(watch_state *st);
-//typedef void (*dhcp_bound_func)(watch_state *st);
-//typedef void (*dhcp_rebinding_func)(watch_state *st);
-//typedef void (*dhcp_renewing_func)(watch_state *st);
-
-
-typedef enum dhcp_state_tag dhcp_state;
 typedef struct _DHCPState DHCPState;
 typedef void (*dhcp_state_func)(DHCPState *st);
 
-enum dhcp_state_tag { INIT, SELECTING, REQUESTING, BOUND, REBINDING, RENEWING };
-
-
+typedef enum _DHCP_STATE_TAG { INIT, SELECTING, REQUESTING, BOUND, REBINDING, RENEWING }DHCP_STATE_TAG;
 
 /**
  * DHCP payload
@@ -107,7 +96,6 @@ typedef struct _DHCP {
 	uint8_t options[0];
 } __attribute__ ((packed)) DHCP;
 
-
 typedef struct _DHCPOption {
 	uint8_t code;
 	uint8_t length;
@@ -116,7 +104,6 @@ typedef struct _DHCPOption {
 
 // DHCPCallback
 typedef bool(*DHCPCallback)(NIC* nic, uint32_t transaction_id, uint32_t ip, void* context);
-
 
 typedef struct _DHCPSession {
 	NIC* nic;
@@ -133,21 +120,12 @@ typedef struct _DHCPSession {
 	void* context;
 } DHCPSession;
 
-struct _DHCPState {
-//	dhcp_init_func init;
-//	dhcp_selecting_func selecting;
-//	dhcp_requesting_func requesting;
-//	dhcp_bound_func bound;
-//	dhcp_rebinding_func rebinding;
-//	dhcp_renewing_func renewing;	
-
-	dhcp_state current_state;
+typedef struct _DHCPState {
+	DHCP_STATE_TAG current_state;
 	dhcp_state_func next_state;
 	DHCPSession* session;
-	uint8_t received_packet_state;
-	uint32_t lease_timer;
-};
-
+	uint8_t message_type;
+} DHCPState;
 
 /**
  * Make session table for each nic
@@ -168,9 +146,9 @@ bool dhcp_process(Packet* packet);
  * @param discovered CallFunc
  * @param offered CallFunc
  * @param ack_received CallFunc
- * @return transaction_id 
+ * @return return true if leasing ip is successfully done 
  */
-uint32_t dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* context);
+bool dhcp_lease_ip(NIC* nic, DHCPCallback offered, DHCPCallback acked, void* context);
 
 List* dhcp_ip_get_all(NIC* nic);
 #endif /* __NET_DHCP_H__ */
