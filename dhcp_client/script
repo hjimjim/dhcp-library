@@ -1,0 +1,4 @@
+connect 
+$vmid = create core: 1 memory: 0x1000000 storage: 0x200000 nic: mac: 0 dev: eth1 ibuf: 1024 obuf: 1024 iband: 1000000000 oband: 1000000000 pool: 0x400000 args: hello world
+upload $vmid main
+start $vmid

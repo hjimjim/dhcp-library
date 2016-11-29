@@ -49,7 +49,6 @@ static void return_to_init(DHCPSession* session) {
 }
 
 static bool create_packet(DHCPSession* dhcp_session, uint8_t dhcp_message_type) {
-
 	if(!dhcp_session) {
 		errno = DHCP_ERROR_NO_SESSION;
 		return false;
@@ -157,7 +156,7 @@ static bool create_packet(DHCPSession* dhcp_session, uint8_t dhcp_message_type) 
 	DHCPOption* end = (DHCPOption*)((parameter_request->data) + parameter_request->length);
 	end->code = endian8(DHCP_OPTION_END);
 
-	udp_pack(packet, sizeof(DHCP) + 40);
+	udp_pack(packet, sizeof(DHCP) + 42);
 	if(!nic_output(packet->nic, packet)) {
 		errno = DHCP_ERROR_REQUEST_FAIL;
 		return false;
@@ -210,8 +209,8 @@ static void dhcp_bound_state(DHCPSession* session) {
 	/* Action */
 	if(session->request_timer_id && event_timer_remove(session->request_timer_id)) 
 		session->request_timer_id = 0;
-	if(session->acked)
-		session->acked(session->nic, session->transaction_id, session->your_ip, session->context);
+//	if(session->acked)
+//		session->acked(session->nic, session->transaction_id, session->your_ip, session->context);
 
 	/* Next transaction states */
 	session->next_state[0] = dhcp_renewing_state;
@@ -233,6 +232,10 @@ static void dhcp_requesting_state(DHCPSession* session) {
 
 	/* Action */
 	uint32_t lease_time = session->lease_time;
+	if(session->acked)
+		session->acked(session->nic, session->transaction_id, session->your_ip, session->context);
+
+
 	
 	//nic_ip_add(session->nic, session->your_ip);
 
@@ -291,6 +294,7 @@ static void dhcp_init_state(DHCPSession* session) {
 
 	/* Action */
 	create_packet(session, DHCP_TYPE_DISCOVER);
+	//dhcp_selecting_state(session);
 	uint64_t timer_id = event_timer_add(dhcp_timercallback, session, 5000000, 5000000);
 	session->discover_timer_id = timer_id;
 
@@ -357,7 +361,7 @@ bool dhcp_init(NIC* nic) {
 		errno = DHCP_ERROR_NIC_CONFIG_FAIL;
 		return false;
 	}
-
+	event_init();
 	return true;
 }
 
@@ -430,6 +434,7 @@ bool dhcp_process(Packet* _packet) {
 
 	DHCPSession* d_state = dhcp_session;
 	dhcp_session->next_state[(*(dop->data)%6) ? 0:1](d_state);
-
+	
+	nic_free(packet);
 	return true;
 }
